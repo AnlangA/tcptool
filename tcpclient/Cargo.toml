@@ -9,6 +9,4 @@ license.workspace = true
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 eframe = { version = "0.31"}
-egui = "0.31"
-chrono = "0.4"
 env_logger = "0.11"

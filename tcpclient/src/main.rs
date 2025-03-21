@@ -21,6 +21,7 @@ struct TcpClientApp {
     tx: Option<mpsc::Sender<Message>>,
     received_messages: Arc<Mutex<Vec<(String, String)>>>, // (时间戳, 消息)
     send_text: String,
+    should_scroll_to_bottom: bool,
 }
 
 impl Default for TcpClientApp {
@@ -32,6 +33,7 @@ impl Default for TcpClientApp {
             tx: None,
             received_messages: Arc::new(Mutex::new(Vec::new())),
             send_text: String::new(),
+            should_scroll_to_bottom: true,
         }
     }
 }
@@ -88,6 +90,7 @@ impl TcpClientApp {
             tx: Some(tx),
             received_messages,
             send_text: String::new(),
+            should_scroll_to_bottom: true,
         }
     }
 }
@@ -362,6 +365,19 @@ impl App for TcpClientApp {
             });
             ui.add_space(10.0);
             
+            // 添加一个自动滚动控制按钮
+            ui.horizontal(|ui| {
+                if ui.button(if self.should_scroll_to_bottom { "📌 禁用自动滚动" } else { "📌 启用自动滚动" })
+                    .clicked() 
+                {
+                    self.should_scroll_to_bottom = !self.should_scroll_to_bottom;
+                }
+                
+                if ui.button("🗑️ 清空消息").clicked() {
+                    self.received_messages.lock().unwrap().clear();
+                }
+            });
+            
             // 创建带边框的滚动区域显示消息
             let messages_frame = egui::Frame::new()
                 .fill(egui::Color32::from_rgb(250, 250, 255))
@@ -369,15 +385,47 @@ impl App for TcpClientApp {
                 .inner_margin(egui::vec2(10.0, 10.0))
                 .outer_margin(egui::vec2(0.0, 5.0));
                 
+            // 计算合适的区域大小
+            let available_height = ui.available_height() - 20.0; // 减去一些边距
+                
             messages_frame.show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
+                // 使用滑动窗口，固定高度，自动滚动到底部
+                let scroll_area = egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .stick_to_bottom(self.should_scroll_to_bottom)
+                    .max_height(available_height)
+                    .id_salt("messages_scroll_area");
+                    
+                // 检查是否有新消息，如果有就设置自动滚动
+                {
+                    let messages = self.received_messages.lock().unwrap();
+                    if !messages.is_empty() {
+                        if let Some(last_msg) = messages.last() {
+                            // 如果最后一条消息的时间戳是在上一帧之后，激活自动滚动
+                            let now = std::time::SystemTime::now();
+                            let datetime = chrono::DateTime::<chrono::Local>::from(now);
+                            let current_time = datetime.format("%H:%M:%S").to_string();
+                            
+                            // 简单比较时间戳字符串，如果最后一条消息是刚刚添加的，激活滚动
+                            if last_msg.0 == current_time {
+                                self.should_scroll_to_bottom = true;
+                            }
+                        }
+                    }
+                }
+                
+                scroll_area.show(ui, |ui| {
+                    // 当用户手动滚动时，禁用自动滚动
+                    if ui.input(|i| i.pointer.any_down() || i.pointer.any_pressed() || i.time_since_last_scroll() < 0.1) {
+                        self.should_scroll_to_bottom = false;
+                    }
                         let messages = self.received_messages.lock().unwrap();
                         if messages.is_empty() {
                             ui.weak("暂无消息...");
                         } else {
+                            // 设置列表最大高度
+                            ui.set_min_height(available_height);
+                            
                             for (timestamp, msg) in messages.iter() {
                                 // 根据消息类型添加不同的样式
                                 let color = if msg.starts_with("收到:") {
@@ -395,7 +443,26 @@ impl App for TcpClientApp {
                                 // 显示格式：[时间戳] 消息内容
                                 let text = format!("[{}] {}", timestamp, msg);
                                 
-                                ui.colored_label(color, text);
+                                                // 创建一个带背景色的消息行
+                                let mut item_bg = ui.visuals().extreme_bg_color;
+                                if msg.starts_with("收到:") {
+                                    item_bg = egui::Color32::from_rgba_unmultiplied(230, 255, 230, 255);
+                                } else if msg.starts_with("已发送:") {
+                                    item_bg = egui::Color32::from_rgba_unmultiplied(230, 230, 255, 255);
+                                }
+                                
+                                egui::Frame::new()
+                                    .fill(item_bg)
+                                    .inner_margin(egui::vec2(5.0, 3.0))
+                                    .outer_margin(egui::vec2(0.0, 1.0))
+                                    .show(ui, |ui| {
+                                        ui.colored_label(color, text);
+                                    });
+                                
+                                // 如果启用了自动滚动，确保最后一条消息可见
+                                if self.should_scroll_to_bottom && msg == &messages.last().unwrap().1 {
+                                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                                }
                             }
                         }
                     });
@@ -470,7 +537,7 @@ impl App for TcpClientApp {
 }
 
 fn main() -> Result<(), eframe::Error> {
- 
+
     // 设置tokio运行时
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = runtime.enter();

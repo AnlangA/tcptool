@@ -1,0 +1,13 @@
+[workspace]
+members = [ "servertest",
+    "tcpclient",
+    "tcpserver",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["anlang <2682525840@qq.com>"]
+description = "TCP client and server workspace"
+license = "MIT"
+

@@ -1,0 +1,12 @@
+[package]
+name = "tcpclient"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+eframe = { version = "0.31"}
+env_logger = "0.11"

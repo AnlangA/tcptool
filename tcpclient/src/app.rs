@@ -1,7 +1,8 @@
 use crate::message::Message;
 use crate::network::handle_network_communications;
 use crate::ui::panels::{
-    render_messages_panel, render_scan_panel, render_send_panel, render_settings_panel,
+    render_messages_panel, render_scan_left_panel, render_scan_logs, render_scan_panel,
+    render_send_panel, render_settings_panel,
 };
 use crate::ui::styles::setup_style;
 use eframe::{egui, App, CreationContext, Frame};
@@ -79,7 +80,6 @@ impl TcpClientApp {
         });
 
         Self {
-            
             is_connected: false,
             tx: Some(tx),
             received_messages,
@@ -97,6 +97,54 @@ impl TcpClientApp {
             ..Default::default()
         }
     }
+
+    /// 渲染连接界面
+    fn render_connection_view(&mut self, ctx: &egui::Context) {
+        // 左侧面板 - 连接设置
+        egui::SidePanel::left("settings_panel")
+            .default_width(220.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                render_settings_panel(self, ui);
+            });
+
+        // 底部面板 - 发送消息
+        egui::TopBottomPanel::bottom("send_panel")
+            .height_range(egui::Rangef::new(120.0, 180.0))
+            .resizable(true)
+            .show(ctx, |ui| {
+                render_send_panel(self, ui);
+            });
+
+        // 中央面板 - 消息显示
+        egui::CentralPanel::default().show(ctx, |ui| {
+            render_messages_panel(self, ui);
+        });
+    }
+
+    /// 渲染IP扫描界面
+    fn render_scan_view(&mut self, ctx: &egui::Context) {
+        // 左侧面板 - 扫描设置
+        egui::SidePanel::left("scan_settings_panel")
+            .default_width(220.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                render_scan_left_panel(self, ui);
+            });
+
+        //底部面板 - 扫描日志
+        egui::TopBottomPanel::bottom("scan_logs_panel")
+            .height_range(egui::Rangef::new(400.0, 400.0))
+            .resizable(true)
+            .show(ctx, |ui| {
+                render_scan_logs(self, ui);
+            });
+
+        // 中央界面
+        egui::CentralPanel::default().show(ctx, |ui| {
+            render_scan_panel(self, ui);
+        });
+    }
 }
 
 impl App for TcpClientApp {
@@ -104,41 +152,15 @@ impl App for TcpClientApp {
         // 顶部菜单栏 - 切换不同界面
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.current_view, AppView::Connection, "连接与数据");
+                ui.selectable_value(&mut self.current_view, AppView::Connection, "连接");
                 ui.selectable_value(&mut self.current_view, AppView::Scan, "IP扫描");
             });
         });
 
         // 根据当前界面类型显示不同内容
         match self.current_view {
-            AppView::Connection => {
-                // 左侧面板 - 连接设置
-                egui::SidePanel::left("settings_panel")
-                    .default_width(220.0)
-                    .resizable(true)
-                    .show(ctx, |ui| {
-                        render_settings_panel(self, ui);
-                    });
-
-                // 中央面板 - 消息显示
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    render_messages_panel(self, ui);
-                });
-
-                // 底部面板 - 发送消息
-                egui::TopBottomPanel::bottom("send_panel")
-                    .height_range(egui::Rangef::new(120.0, 180.0))
-                    .resizable(true)
-                    .show(ctx, |ui| {
-                        render_send_panel(self, ui);
-                    });
-            }
-            AppView::Scan => {
-                // 扫描界面 - 使用全屏幕显示扫描面板
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    render_scan_panel(self, ui);
-                });
-            }
+            AppView::Connection => self.render_connection_view(ctx),
+            AppView::Scan => self.render_scan_view(ctx),
         }
 
         // 强制每帧重绘，确保消息及时显示

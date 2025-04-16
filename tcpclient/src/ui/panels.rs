@@ -1,6 +1,6 @@
 use crate::app::TcpClientApp;
 use crate::message::Message;
-use crate::network::scanner::{is_valid_ip, is_valid_port, is_valid_ip_range};
+use crate::network::scanner::{is_valid_ip, is_valid_ip_range, is_valid_port};
 use crate::ui::styles::{create_message_frame, get_message_background, get_message_color};
 use eframe::egui;
 use tokio::sync::mpsc;
@@ -20,18 +20,22 @@ pub fn render_settings_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.strong("IP 地址:");
-            ui.add(egui::TextEdit::singleline(&mut app.ip)
-                .desired_width(120.0)
-                .hint_text("输入服务器IP"));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.ip)
+                    .desired_width(120.0)
+                    .hint_text("输入服务器IP"),
+            );
         });
 
         ui.add_space(5.0);
 
         ui.horizontal(|ui| {
             ui.strong("端口号:");
-            ui.add(egui::TextEdit::singleline(&mut app.port)
-                .desired_width(120.0)
-                .hint_text("输入端口"));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.port)
+                    .desired_width(120.0)
+                    .hint_text("输入端口"),
+            );
         });
     });
 
@@ -40,9 +44,12 @@ pub fn render_settings_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     // 连接/断开按钮区域
     ui.vertical_centered(|ui| {
         if !app.is_connected {
-            if ui.add(egui::Button::new("连接")
-                .fill(egui::Color32::from_rgb(100, 150, 220))
-                .min_size(egui::vec2(100.0, 30.0)))
+            if ui
+                .add(
+                    egui::Button::new("连接")
+                        .fill(egui::Color32::from_rgb(100, 150, 220))
+                        .min_size(egui::vec2(100.0, 30.0)),
+                )
                 .clicked()
             {
                 if let Ok(port) = app.port.parse::<u16>() {
@@ -57,9 +64,12 @@ pub fn render_settings_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                 }
             }
         } else {
-            if ui.add(egui::Button::new("断开")
-                .fill(egui::Color32::from_rgb(220, 100, 100))
-                .min_size(egui::vec2(100.0, 30.0)))
+            if ui
+                .add(
+                    egui::Button::new("断开")
+                        .fill(egui::Color32::from_rgb(220, 100, 100))
+                        .min_size(egui::vec2(100.0, 30.0)),
+                )
                 .clicked()
             {
                 if let Some(tx) = &app.tx {
@@ -84,7 +94,11 @@ pub fn render_settings_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     status_frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.strong("状态:");
-            let status_text = if app.is_connected { "已连接" } else { "未连接" };
+            let status_text = if app.is_connected {
+                "已连接"
+            } else {
+                "未连接"
+            };
             let status_color = if app.is_connected {
                 egui::Color32::from_rgb(40, 180, 40)
             } else {
@@ -112,7 +126,12 @@ pub fn render_messages_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
     // 添加一个自动滚动控制按钮
     ui.horizontal(|ui| {
-        if ui.button(if app.should_scroll_to_bottom { "📌 禁用自动滚动" } else { "📌 启用自动滚动" })
+        if ui
+            .button(if app.should_scroll_to_bottom {
+                "📌 禁用自动滚动"
+            } else {
+                "📌 启用自动滚动"
+            })
             .clicked()
         {
             app.should_scroll_to_bottom = !app.should_scroll_to_bottom;
@@ -141,57 +160,29 @@ pub fn render_messages_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
             .max_height(available_height)
             .id_salt("messages_scroll_area");
 
-        // 检查是否有新消息，如果有就设置自动滚动
-        {
-            let messages = app.received_messages.lock().unwrap();
-            if !messages.is_empty() {
-                if let Some(last_msg) = messages.last() {
-                    // 如果最后一条消息的时间戳是在上一帧之后，激活自动滚动
-                    let now = std::time::SystemTime::now();
-                    let datetime = chrono::DateTime::<chrono::Local>::from(now);
-                    let current_time = datetime.format("%H:%M:%S").to_string();
-
-                    // 简单比较时间戳字符串，如果最后一条消息是刚刚添加的，激活滚动
-                    if last_msg.0 == current_time {
-                        app.should_scroll_to_bottom = true;
-                    }
-                }
-            }
-        }
-
         scroll_area.show(ui, |ui| {
-            // 当用户手动滚动时，禁用自动滚动
-            if ui.input(|i| i.pointer.any_down() || i.pointer.any_pressed() || i.time_since_last_scroll() < 0.1) {
-                app.should_scroll_to_bottom = false;
-            }
-                let messages = app.received_messages.lock().unwrap();
-                if messages.is_empty() {
-                    ui.weak("暂无消息...");
-                } else {
-                    // 设置列表最大高度
-                    ui.set_min_height(available_height);
+            let messages = app.received_messages.lock().unwrap();
+            if messages.is_empty() {
+                ui.weak("暂无消息...");
+            } else {
+                // 设置列表最大高度
+                ui.set_min_height(available_height);
 
-                    for (timestamp, msg) in messages.iter() {
-                        // 根据消息类型获取样式
-                        let color = get_message_color(msg);
-                        let item_bg = get_message_background(msg);
+                for (timestamp, msg) in messages.iter() {
+                    // 根据消息类型获取样式
+                    let color = get_message_color(msg);
+                    let item_bg = get_message_background(msg);
 
-                        // 显示格式：[时间戳] 消息内容
-                        let text = format!("[{}] {}", timestamp, msg);
+                    // 显示格式：[时间戳] 消息内容
+                    let text = format!("[{}] {}", timestamp, msg);
 
-                        // 创建一个带背景色的消息行
-                        create_message_frame(item_bg)
-                            .show(ui, |ui| {
-                                ui.colored_label(color, text);
-                            });
-
-                        // 如果启用了自动滚动，确保最后一条消息可见
-                        if app.should_scroll_to_bottom && msg == &messages.last().unwrap().1 {
-                            ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                        }
-                    }
+                    // 创建一个带背景色的消息行
+                    create_message_frame(item_bg).show(ui, |ui| {
+                        ui.colored_label(color, text);
+                    });
                 }
-            });
+            }
+        });
     });
 }
 
@@ -267,9 +258,12 @@ fn render_send_controls(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
 // 渲染清空按钮
 fn render_clear_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
-    if ui.add(egui::Button::new("清空")
-        .fill(egui::Color32::from_rgb(150, 150, 150))
-        .min_size(egui::vec2(80.0, 28.0)))
+    if ui
+        .add(
+            egui::Button::new("清空")
+                .fill(egui::Color32::from_rgb(150, 150, 150))
+                .min_size(egui::vec2(80.0, 28.0)),
+        )
         .clicked()
     {
         app.send_text.clear();
@@ -297,17 +291,9 @@ fn handle_send_button_click(app: &mut TcpClientApp) {
 pub fn render_scan_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     // 渲染面板标题
     render_scan_panel_header(ui);
-    
-    // 使用水平布局分为左右两个部分
-    ui.horizontal(|ui| {
-        // 左侧设置区域
-        render_scan_left_panel(app, ui);
 
-        ui.separator();
-
-        // 右侧结果区域
-        render_scan_right_panel(app, ui);
-    });
+    // 渲染扫描结果
+    render_scan_right_panel(app, ui);
 }
 
 // 渲染扫描面板标题
@@ -322,19 +308,25 @@ fn render_scan_panel_header(ui: &mut egui::Ui) {
     header.show(ui, |ui| {
         ui.vertical_centered(|ui| {
             ui.horizontal(|ui| {
-                ui.heading(egui::RichText::new("IP扫描工具").color(egui::Color32::WHITE).size(24.0));
+                ui.heading(
+                    egui::RichText::new("IP扫描工具")
+                        .color(egui::Color32::WHITE)
+                        .size(24.0),
+                );
             });
             ui.add_space(5.0);
-            ui.label(egui::RichText::new("扫描网络中的开放端口，快速发现可用服务").color(egui::Color32::WHITE));
+            ui.label(
+                egui::RichText::new("扫描网络中的开放端口，快速发现可用服务")
+                    .color(egui::Color32::WHITE),
+            );
         });
     });
     ui.add_space(15.0);
 }
 
 // 渲染扫描面板左侧内容
-fn render_scan_left_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
+pub fn render_scan_left_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
-        ui.set_width(ui.available_width() * 0.3);
 
         // 扫描设置区域
         render_scan_settings(app, ui);
@@ -356,16 +348,18 @@ fn render_scan_settings(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     scan_frame.show(ui, |ui| {
         // 设置区域标题
         ui.vertical_centered(|ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(5.0);
-                ui.heading(egui::RichText::new("扫描设置").color(egui::Color32::from_rgb(41, 128, 185)).size(18.0));
-            });
+            ui.add_space(5.0);
+            ui.heading(
+                egui::RichText::new("扫描设置")
+                    .color(egui::Color32::from_rgb(41, 128, 185))
+                    .size(18.0),
+            );
         });
         ui.add_space(15.0);
 
         // IP和端口输入区域
         render_ip_port_inputs(app, ui);
-        
+
         ui.add_space(15.0);
 
         // 扫描按钮
@@ -381,11 +375,13 @@ fn render_ip_port_inputs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.add_space(5.0);
         ui.strong(egui::RichText::new("起始IP:").size(16.0));
-        ui.add(egui::TextEdit::singleline(&mut app.start_ip)
-            .desired_width(150.0)
-            .hint_text("192.168.1.1")
-            .margin(egui::vec2(8.0, 6.0))
-            .text_color(egui::Color32::from_rgb(41, 128, 185)));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.start_ip)
+                .desired_width(150.0)
+                .hint_text("192.168.1.1")
+                .margin(egui::vec2(8.0, 6.0))
+                .text_color(egui::Color32::from_rgb(41, 128, 185)),
+        );
     });
 
     ui.add_space(5.0);
@@ -393,11 +389,13 @@ fn render_ip_port_inputs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.add_space(5.0);
         ui.strong(egui::RichText::new("结束IP:").size(16.0));
-        ui.add(egui::TextEdit::singleline(&mut app.end_ip)
-            .desired_width(150.0)
-            .hint_text("192.168.1.255")
-            .margin(egui::vec2(8.0, 6.0))
-            .text_color(egui::Color32::from_rgb(41, 128, 185)));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.end_ip)
+                .desired_width(150.0)
+                .hint_text("192.168.1.255")
+                .margin(egui::vec2(8.0, 6.0))
+                .text_color(egui::Color32::from_rgb(41, 128, 185)),
+        );
     });
 
     ui.add_space(5.0);
@@ -405,33 +403,45 @@ fn render_ip_port_inputs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.add_space(5.0);
         ui.strong(egui::RichText::new("扫描端口:").size(16.0));
-        ui.add(egui::TextEdit::singleline(&mut app.scan_port)
-            .desired_width(150.0)
-            .hint_text("8888")
-            .margin(egui::vec2(8.0, 6.0))
-            .text_color(egui::Color32::from_rgb(41, 128, 185)));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.scan_port)
+                .desired_width(150.0)
+                .hint_text("8888")
+                .margin(egui::vec2(8.0, 6.0))
+                .text_color(egui::Color32::from_rgb(41, 128, 185)),
+        );
     });
 }
 
 // 渲染扫描按钮
 fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
-        let button_text = if app.is_scanning { "停止扫描" } else { "开始扫描" };
+        let button_text = if app.is_scanning {
+            "停止扫描"
+        } else {
+            "开始扫描"
+        };
         let button_color = if app.is_scanning {
             egui::Color32::from_rgb(220, 100, 100)
         } else {
             egui::Color32::from_rgb(100, 150, 220)
         };
 
-        if ui.add(egui::Button::new(egui::RichText::new(button_text).size(16.0).strong())
-            .fill(button_color)
-            .min_size(egui::vec2(150.0, 40.0))
-            .corner_radius(6.0))
+        if ui
+            .add(
+                egui::Button::new(egui::RichText::new(button_text).size(16.0).strong())
+                    .fill(button_color)
+                    .min_size(egui::vec2(150.0, 40.0))
+                    .corner_radius(6.0),
+            )
             .clicked()
         {
             if !app.is_scanning {
                 // 验证输入
-                if is_valid_ip(&app.start_ip) && is_valid_ip(&app.end_ip) && is_valid_port(&app.scan_port) {
+                if is_valid_ip(&app.start_ip)
+                    && is_valid_ip(&app.end_ip)
+                    && is_valid_port(&app.scan_port)
+                {
                     if is_valid_ip_range(&app.start_ip, &app.end_ip) {
                         if let Ok(port) = app.scan_port.parse::<u16>() {
                             if let Some(tx) = &app.tx {
@@ -443,7 +453,15 @@ fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                                 let scan_results = app.scan_results.clone();
                                 let scan_logs = app.scan_logs.clone();
                                 tokio::spawn(async move {
-                                    let _ = tx.send(Message::ScanIp(start_ip, end_ip, port, scan_results, scan_logs)).await;
+                                    let _ = tx
+                                        .send(Message::ScanIp(
+                                            start_ip,
+                                            end_ip,
+                                            port,
+                                            scan_results,
+                                            scan_logs,
+                                        ))
+                                        .await;
                                 });
 
                                 app.is_scanning = true;
@@ -454,26 +472,38 @@ fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                             // 端口格式错误
                             let error_msg = "端口格式无效";
                             let timestamp = get_timestamp();
-                            app.scan_logs.lock().unwrap().push((timestamp.clone(), error_msg.to_string()));
+                            app.scan_logs
+                                .lock()
+                                .unwrap()
+                                .push((timestamp.clone(), error_msg.to_string()));
                         }
                     } else {
                         // IP范围无效
                         let error_msg = "IP范围无效或超过最大扫描范围(1000个IP)";
                         let timestamp = get_timestamp();
-                        app.scan_logs.lock().unwrap().push((timestamp.clone(), error_msg.to_string()));
+                        app.scan_logs
+                            .lock()
+                            .unwrap()
+                            .push((timestamp.clone(), error_msg.to_string()));
                     }
                 } else {
                     // 输入格式错误
                     let error_msg = "IP地址或端口格式无效";
                     let timestamp = get_timestamp();
-                    app.scan_logs.lock().unwrap().push((timestamp.clone(), error_msg.to_string()));
+                    app.scan_logs
+                        .lock()
+                        .unwrap()
+                        .push((timestamp.clone(), error_msg.to_string()));
                 }
             } else {
                 // 停止扫描
                 app.is_scanning = false;
                 let cancel_msg = "用户取消扫描";
                 let timestamp = get_timestamp();
-                app.scan_logs.lock().unwrap().push((timestamp.clone(), cancel_msg.to_string()));
+                app.scan_logs
+                    .lock()
+                    .unwrap()
+                    .push((timestamp.clone(), cancel_msg.to_string()));
             }
         }
     });
@@ -487,7 +517,11 @@ fn render_scan_status(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.strong("状态:");
-        let status_text = if app.is_scanning { "正在扫描" } else { "就绪" };
+        let status_text = if app.is_scanning {
+            "正在扫描"
+        } else {
+            "就绪"
+        };
         let status_color = if app.is_scanning {
             egui::Color32::from_rgb(40, 180, 40)
         } else {
@@ -512,7 +546,10 @@ fn render_scan_help_section(ui: &mut egui::Ui) {
         .inner_margin(egui::vec2(15.0, 15.0))
         .outer_margin(egui::vec2(0.0, 0.0))
         .corner_radius(8.0)
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(210, 180, 140)));
+        .stroke(egui::Stroke::new(
+            1.0,
+            egui::Color32::from_rgb(210, 180, 140),
+        ));
 
     help_frame.show(ui, |ui| {
         ui.vertical_centered(|ui| {
@@ -556,26 +593,26 @@ fn render_scan_right_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
         // 扫描结果区域
         render_scan_results(app, ui);
-
-        ui.add_space(10.0);
-
-        // 扫描日志区域
-        render_scan_logs(app, ui);
     });
 }
 
 // 渲染扫描结果区域
 fn render_scan_results(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
-        ui.horizontal(|ui| {
-            ui.heading(egui::RichText::new("扫描结果").color(egui::Color32::from_rgb(39, 174, 96)).size(18.0));
-        });
+        ui.heading(
+            egui::RichText::new("扫描结果")
+                .color(egui::Color32::from_rgb(39, 174, 96))
+                .size(18.0),
+        );
     });
     ui.add_space(5.0);
 
     let results_frame = egui::Frame::new()
         .fill(egui::Color32::from_rgb(250, 255, 250))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(200, 230, 200)))
+        .stroke(egui::Stroke::new(
+            1.0,
+            egui::Color32::from_rgb(200, 230, 200),
+        ))
         .inner_margin(egui::vec2(15.0, 15.0))
         .outer_margin(egui::vec2(0.0, 5.0))
         .corner_radius(8.0);
@@ -615,15 +652,18 @@ fn render_scan_results(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                 for result in results.iter() {
                     // 创建一个带背景色的结果行
                     let item_bg = egui::Color32::from_rgba_unmultiplied(230, 255, 230, 255);
-                    create_message_frame(item_bg)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.add_space(5.0);
-                                ui.label(egui::RichText::new("✔").size(16.0).color(egui::Color32::from_rgb(0, 150, 0)));
-                                ui.add_space(8.0);
-                                ui.colored_label(egui::Color32::from_rgb(0, 100, 0), result);
-                            });
+                    create_message_frame(item_bg).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(5.0);
+                            ui.label(
+                                egui::RichText::new("✔")
+                                    .size(16.0)
+                                    .color(egui::Color32::from_rgb(0, 150, 0)),
+                            );
+                            ui.add_space(8.0);
+                            ui.colored_label(egui::Color32::from_rgb(0, 100, 0), result);
                         });
+                    });
                 }
             }
         });
@@ -631,17 +671,22 @@ fn render_scan_results(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 }
 
 // 渲染扫描日志区域
-fn render_scan_logs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
+pub fn render_scan_logs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
-        ui.horizontal(|ui| {
-            ui.heading(egui::RichText::new("扫描日志").color(egui::Color32::from_rgb(100, 120, 150)).size(18.0));
-        });
+        ui.heading(
+            egui::RichText::new("扫描日志")
+                .color(egui::Color32::from_rgb(100, 120, 150))
+                .size(18.0),
+        );
     });
     ui.add_space(5.0);
 
     let logs_frame = egui::Frame::new()
         .fill(egui::Color32::from_rgb(245, 245, 250))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(200, 200, 230)))
+        .stroke(egui::Stroke::new(
+            1.0,
+            egui::Color32::from_rgb(200, 200, 230),
+        ))
         .inner_margin(egui::vec2(15.0, 15.0))
         .outer_margin(egui::vec2(0.0, 5.0))
         .corner_radius(8.0);
@@ -653,7 +698,7 @@ fn render_scan_logs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
         // 使用滑动窗口
         let scroll_area = egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
-            .stick_to_right(true)
+            .stick_to_bottom(true)
             .max_height(available_height)
             .id_salt("scan_logs_scroll_area");
 
@@ -674,17 +719,24 @@ fn render_scan_logs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                 for (timestamp, log) in logs.iter() {
                     // 创建一个带背景色的日志行
                     let item_bg = egui::Color32::from_rgba_unmultiplied(245, 245, 250, 255);
-                    create_message_frame(item_bg)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.add_space(5.0);
-                                ui.label(egui::RichText::new("•").size(16.0).color(egui::Color32::from_rgb(100, 100, 150)));
-                                ui.add_space(8.0);
-                                ui.label(egui::RichText::new(format!("[{}]", timestamp)).size(14.0).color(egui::Color32::from_rgb(100, 100, 150)));
-                                ui.add_space(5.0);
-                                ui.colored_label(egui::Color32::from_rgb(80, 80, 100), log);
-                            });
+                    create_message_frame(item_bg).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(5.0);
+                            ui.label(
+                                egui::RichText::new("•")
+                                    .size(16.0)
+                                    .color(egui::Color32::from_rgb(100, 100, 150)),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(format!("[{}]", timestamp))
+                                    .size(14.0)
+                                    .color(egui::Color32::from_rgb(100, 100, 150)),
+                            );
+                            ui.add_space(5.0);
+                            ui.colored_label(egui::Color32::from_rgb(80, 80, 100), log);
                         });
+                    });
                 }
             }
         });

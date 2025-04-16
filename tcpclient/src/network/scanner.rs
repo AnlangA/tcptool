@@ -88,11 +88,6 @@ pub async fn scan_ip_range(
     let start_msg = format!("开始扫描IP范围: {} 到 {}, 端口: {}", start_ip, end_ip, port);
     let timestamp = get_timestamp();
 
-    // 同时记录到消息和扫描日志
-    messages
-        .lock()
-        .unwrap()
-        .push((timestamp.clone(), start_msg.clone()));
     scan_logs.lock().unwrap().push((timestamp, start_msg));
 
     // 转换IP地址为数字表示
@@ -100,11 +95,6 @@ pub async fn scan_ip_range(
         let total_ips = end - start + 1;
         let total_msg = format!("总共需要扫描 {} 个IP地址", total_ips);
         let timestamp = get_timestamp();
-
-        messages
-            .lock()
-            .unwrap()
-            .push((timestamp.clone(), total_msg.clone()));
         scan_logs.lock().unwrap().push((timestamp, total_msg));
 
         // 使用原子计数器来跟踪进度和结果
@@ -121,10 +111,7 @@ pub async fn scan_ip_range(
         let thread_count = std::cmp::min(total_ips_usize, cpu_cores * 2);
         let thread_msg = format!("使用 {} 个线程进行扫描", thread_count);
         let timestamp = get_timestamp();
-        messages
-            .lock()
-            .unwrap()
-            .push((timestamp.clone(), thread_msg.clone()));
+
         scan_logs.lock().unwrap().push((timestamp, thread_msg));
 
         // 创建任务集合
@@ -135,7 +122,6 @@ pub async fn scan_ip_range(
             let batch_end = std::cmp::min(batch_start + batch_size as u32 - 1, end);
 
             // 克隆所有需要的引用
-            let messages = Arc::clone(&messages);
             let scan_results = Arc::clone(&scan_results);
             let scan_logs = Arc::clone(&scan_logs);
             let is_scanning = Arc::clone(&is_scanning);
@@ -164,11 +150,6 @@ pub async fn scan_ip_range(
                             current_scanned, total_ips_usize, progress_percent
                         );
                         let timestamp = get_timestamp();
-
-                        messages
-                            .lock()
-                            .unwrap()
-                            .push((timestamp.clone(), progress_msg.clone()));
                         scan_logs.lock().unwrap().push((timestamp, progress_msg));
                     }
 
@@ -181,10 +162,6 @@ pub async fn scan_ip_range(
                         let found_msg = format!("发现开放端口: {}:{}", ip_str, port);
                         let timestamp = get_timestamp();
 
-                        messages
-                            .lock()
-                            .unwrap()
-                            .push((timestamp.clone(), found_msg.clone()));
                         scan_logs.lock().unwrap().push((timestamp, found_msg));
                     } else {
                         // 只在扫描日志中记录关闭的端口，不在主消息区显示
@@ -208,10 +185,6 @@ pub async fn scan_ip_range(
             let cancel_msg = "扫描已取消".to_string();
             let timestamp = get_timestamp();
 
-            messages
-                .lock()
-                .unwrap()
-                .push((timestamp.clone(), cancel_msg.clone()));
             scan_logs.lock().unwrap().push((timestamp, cancel_msg));
         }
 
@@ -226,19 +199,12 @@ pub async fn scan_ip_range(
         );
         let timestamp = get_timestamp();
 
-        messages
-            .lock()
-            .unwrap()
-            .push((timestamp.clone(), complete_msg.clone()));
+
         scan_logs.lock().unwrap().push((timestamp, complete_msg));
     } else {
         let error_msg = "IP地址格式无效，无法开始扫描".to_string();
         let timestamp = get_timestamp();
 
-        messages
-            .lock()
-            .unwrap()
-            .push((timestamp.clone(), error_msg.clone()));
         scan_logs.lock().unwrap().push((timestamp, error_msg));
     }
 

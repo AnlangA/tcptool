@@ -128,11 +128,6 @@ pub async fn handle_network_communications(
                 );
                 let timestamp = get_timestamp();
 
-                // 同时记录到消息和扫描日志
-                scan_messages
-                    .lock()
-                    .unwrap()
-                    .push((timestamp.clone(), start_msg.clone()));
                 scan_logs.lock().unwrap().push((timestamp, start_msg));
 
                 // 启动扫描任务

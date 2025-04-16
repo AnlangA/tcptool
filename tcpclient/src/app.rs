@@ -50,8 +50,8 @@ impl Default for TcpClientApp {
             should_scroll_to_bottom: true,
 
             // IP扫描相关状态初始化
-            start_ip: "192.168.1.1".to_string(),
-            end_ip: "192.168.1.255".to_string(),
+            start_ip: "127.0.0.1".to_string(),
+            end_ip: "127.0.0.10".to_string(),
             scan_port: "8888".to_string(),
             is_scanning: false,
             scan_results: Arc::new(Mutex::new(Vec::new())),
@@ -79,8 +79,7 @@ impl TcpClientApp {
         });
 
         Self {
-            ip: "127.0.0.1".to_string(),
-            port: "8888".to_string(),
+            
             is_connected: false,
             tx: Some(tx),
             received_messages,
@@ -88,15 +87,14 @@ impl TcpClientApp {
             should_scroll_to_bottom: true,
 
             // IP扫描相关状态初始化
-            start_ip: "192.168.1.1".to_string(),
-            end_ip: "192.168.1.255".to_string(),
-            scan_port: "8888".to_string(),
             is_scanning: false,
             scan_results: Arc::new(Mutex::new(Vec::new())),
             scan_logs: Arc::new(Mutex::new(Vec::new())),
 
             // 界面相关状态初始化
             current_view: AppView::Connection,
+
+            ..Default::default()
         }
     }
 }

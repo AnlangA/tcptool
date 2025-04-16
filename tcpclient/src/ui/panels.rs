@@ -197,15 +197,29 @@ pub fn render_messages_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
 // 底部发送面板
 pub fn render_send_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
+    // 渲染面板标题
+    render_send_panel_header(ui);
+
+    // 渲染消息输入区域
+    render_message_input_area(app, ui);
+
+    ui.add_space(10.0);
+
+    // 渲染发送控制按钮
+    render_send_controls(app, ui);
+}
+
+// 渲染发送面板标题
+fn render_send_panel_header(ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
         ui.heading("发送消息");
     });
     ui.add_space(10.0);
+}
 
-    let input_frame = egui::Frame::new()
-        .fill(egui::Color32::from_rgb(250, 250, 255))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(200)))
-        .inner_margin(egui::vec2(10.0, 10.0));
+// 渲染消息输入区域
+fn render_message_input_area(app: &mut TcpClientApp, ui: &mut egui::Ui) {
+    let input_frame = create_input_frame();
 
     input_frame.show(ui, |ui| {
         let text_edit = egui::TextEdit::multiline(&mut app.send_text)
@@ -214,42 +228,69 @@ pub fn render_send_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
             .hint_text("输入要发送的消息...");
         ui.add(text_edit);
     });
+}
 
-    ui.add_space(10.0);
+// 创建输入框架
+fn create_input_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(egui::Color32::from_rgb(250, 250, 255))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(200)))
+        .inner_margin(egui::vec2(10.0, 10.0))
+}
 
+// 渲染发送控制按钮
+fn render_send_controls(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add(egui::Button::new("清空")
-                .fill(egui::Color32::from_rgb(150, 150, 150))
-                .min_size(egui::vec2(80.0, 28.0)))
-                .clicked()
-            {
-                app.send_text.clear();
-            }
+            // 清空按钮
+            render_clear_button(app, ui);
 
             ui.add_space(10.0);
 
-            let send_button = egui::Button::new("发送")
-                .fill(egui::Color32::from_rgb(100, 150, 220))
-                .min_size(egui::vec2(80.0, 28.0));
-
+            // 发送按钮
             let send_enabled = !app.send_text.is_empty() && app.is_connected;
+            let send_button = create_send_button();
+
             let send_response = if send_enabled {
                 ui.add(send_button)
             } else {
                 ui.add_enabled(false, send_button)
             };
 
+            // 处理发送按钮点击
             if send_response.clicked() && send_enabled {
-                if let Some(tx) = &app.tx {
-                    let tx = tx.clone();
-                    let text = app.send_text.clone();
-                    send_message(&tx, text);
-                    app.send_text.clear();
-                }
+                handle_send_button_click(app);
             }
         });
     });
+}
+
+// 渲染清空按钮
+fn render_clear_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
+    if ui.add(egui::Button::new("清空")
+        .fill(egui::Color32::from_rgb(150, 150, 150))
+        .min_size(egui::vec2(80.0, 28.0)))
+        .clicked()
+    {
+        app.send_text.clear();
+    }
+}
+
+// 创建发送按钮
+fn create_send_button() -> egui::Button<'static> {
+    egui::Button::new("发送")
+        .fill(egui::Color32::from_rgb(100, 150, 220))
+        .min_size(egui::vec2(80.0, 28.0))
+}
+
+// 处理发送按钮点击
+fn handle_send_button_click(app: &mut TcpClientApp) {
+    if let Some(tx) = &app.tx {
+        let tx = tx.clone();
+        let text = app.send_text.clone();
+        send_message(&tx, text);
+        app.send_text.clear();
+    }
 }
 
 // IP扫描面板 - 全新设计的独立扫描界面

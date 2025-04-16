@@ -18,7 +18,7 @@ pub fn setup_style(ctx: &egui::Context) {
             },
         ],
     ));
-    
+
     // 设置应用样式
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(10.0, 10.0);
@@ -27,12 +27,12 @@ pub fn setup_style(ctx: &egui::Context) {
     style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(230, 230, 235);
     style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(210, 210, 220);
     style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(220, 220, 230);
-    
+
     // 在eframe 0.31中，window_shadow的属性是不同类型的
     style.visuals.window_shadow.offset = [2, 2]; // 使用i8数组而不是vec2
     style.visuals.window_shadow.blur = 8; // 使用u8而不是f32
     style.visuals.window_shadow.spread = 1; // 使用u8而不是f32
-    
+
     ctx.set_style(style);
 }
 

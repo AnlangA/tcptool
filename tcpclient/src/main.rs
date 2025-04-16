@@ -12,16 +12,16 @@ fn main() -> Result<(), eframe::Error> {
     // 设置eframe选项
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 650.0])
-            .with_min_inner_size([640.0, 480.0])
+            .with_inner_size([1000.0, 700.0])
+            .with_min_inner_size([800.0, 600.0])
             .with_title("TCP 客户端"),
         ..Default::default()
     };
-    
+
     // 运行应用
     eframe::run_native(
         "TCP 客户端",
         options,
-        Box::new(|cc| Ok(Box::<app::TcpClientApp>::new(app::TcpClientApp::new(cc))))
+        Box::new(|cc| Ok(Box::<app::TcpClientApp>::new(app::TcpClientApp::new(cc)))),
     )
 }

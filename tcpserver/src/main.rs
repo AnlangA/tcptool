@@ -1,6 +1,6 @@
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::error::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -10,18 +10,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(listener) => {
             println!("Server running on {}", addr);
             listener
-        },
+        }
         Err(e) => {
             eprintln!("无法绑定到 {}: {}", addr, e);
             eprintln!("尝试绑定到备用端口 0.0.0.0:8888（允许从任何网络接口访问）");
-            
+
             // 尝试使用 0.0.0.0 而不是 127.0.0.1
             let backup_addr = "0.0.0.0:8888";
             match TcpListener::bind(backup_addr).await {
                 Ok(listener) => {
                     println!("Server running on {}", backup_addr);
                     listener
-                },
+                }
                 Err(e) => {
                     eprintln!("无法绑定到 {}: {}", backup_addr, e);
                     return Err(e.into());
@@ -54,7 +54,7 @@ async fn process_socket(mut socket: TcpStream) -> Result<(), Box<dyn Error>> {
     loop {
         // 从socket中读取数据
         let n = socket.read(&mut buffer).await?;
-        
+
         // 如果读取到0字节，表示客户端已关闭连接
         if n == 0 {
             println!("Client disconnected");
@@ -62,7 +62,11 @@ async fn process_socket(mut socket: TcpStream) -> Result<(), Box<dyn Error>> {
         }
 
         // 将收到的数据原样发送回客户端
-        println!("Received {} bytes, echoing back: {}", n, String::from_utf8_lossy(&buffer[0..n]));
+        println!(
+            "Received {} bytes, echoing back: {}",
+            n,
+            String::from_utf8_lossy(&buffer[0..n])
+        );
         socket.write_all(&buffer[0..n]).await?;
     }
 }

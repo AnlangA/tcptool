@@ -1,5 +1,6 @@
 use crate::message::Message;
 use crate::network::handle_data_reception;
+use crate::network::scanner::scan_ip_range;
 use crate::utils::get_timestamp;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
@@ -16,7 +17,7 @@ pub async fn handle_network_communications(
     // 创建一个通道来管理TCP接收端口 - 修复未使用的变量警告
     let (_port_tx, _port_rx) = mpsc::channel::<tokio::net::tcp::OwnedReadHalf>(10);
     let mut has_connection = false;
-    
+
     while let Some(msg) = rx.recv().await {
         match msg {
             Message::Connect(addr, port) => {
@@ -24,19 +25,22 @@ pub async fn handle_network_communications(
                 has_connection = false;
                 // 清空通道
                 while conn_rx.try_recv().is_ok() {}
-                
+
                 let connect_addr = format!("{}:{}", addr, port);
                 match TcpStream::connect(&connect_addr).await {
                     Ok(stream) => {
-                        messages.lock().unwrap().push((get_timestamp(), format!("已连接到 {}", connect_addr)));
+                        messages
+                            .lock()
+                            .unwrap()
+                            .push((get_timestamp(), format!("已连接到 {}", connect_addr)));
                         has_connection = true;
-                        
+
                         // 将stream分为发送和接收两个部分
                         let (read_half, write_half) = stream.into_split();
-                        
+
                         // 将新连接放入通道
                         let _ = conn_tx.send(write_half).await;
-                        
+
                         // 启动单独的异步任务处理数据接收
                         // 修复未使用的变量警告
                         let _recv_addr = connect_addr.clone();
@@ -47,7 +51,10 @@ pub async fn handle_network_communications(
                         });
                     }
                     Err(e) => {
-                        messages.lock().unwrap().push((get_timestamp(), format!("连接失败: {}", e)));
+                        messages
+                            .lock()
+                            .unwrap()
+                            .push((get_timestamp(), format!("连接失败: {}", e)));
                     }
                 }
             }
@@ -56,7 +63,10 @@ pub async fn handle_network_communications(
                     // 清空通道
                     while conn_rx.try_recv().is_ok() {}
                     has_connection = false;
-                    messages.lock().unwrap().push((get_timestamp(), "已断开连接".to_string()));
+                    messages
+                        .lock()
+                        .unwrap()
+                        .push((get_timestamp(), "已断开连接".to_string()));
                 }
             }
             Message::Send(data) => {
@@ -67,17 +77,23 @@ pub async fn handle_network_communications(
                             let send_messages = messages.clone();
                             let send_data = data.clone();
                             let conn_tx_clone = conn_tx.clone();
-                            
+
                             // 在单独的任务中发送数据
                             tokio::spawn(async move {
                                 match stream.write_all(send_data.as_bytes()).await {
                                     Ok(_) => {
-                                        send_messages.lock().unwrap().push((get_timestamp(), format!("已发送: {}", send_data)));
+                                        send_messages.lock().unwrap().push((
+                                            get_timestamp(),
+                                            format!("已发送: {}", send_data),
+                                        ));
                                         // 将连接放回通道
                                         let _ = conn_tx_clone.send(stream).await;
                                     }
                                     Err(e) => {
-                                        send_messages.lock().unwrap().push((get_timestamp(), format!("发送失败: {}", e)));
+                                        send_messages
+                                            .lock()
+                                            .unwrap()
+                                            .push((get_timestamp(), format!("发送失败: {}", e)));
                                         // 发送失败，不放回通道
                                     }
                                 }
@@ -85,12 +101,53 @@ pub async fn handle_network_communications(
                         }
                         Err(_) => {
                             // 通道中没有连接，可能正在被另一个任务使用
-                            messages.lock().unwrap().push((get_timestamp(), "连接正忙，请稍后再试".to_string()));
+                            messages
+                                .lock()
+                                .unwrap()
+                                .push((get_timestamp(), "连接正忙，请稍后再试".to_string()));
                         }
                     }
                 } else {
-                    messages.lock().unwrap().push((get_timestamp(), "未连接，无法发送数据".to_string()));
+                    messages
+                        .lock()
+                        .unwrap()
+                        .push((get_timestamp(), "未连接，无法发送数据".to_string()));
                 }
+            }
+            Message::ScanIp(start_ip, end_ip, port, scan_results, scan_logs) => {
+                // 创建扫描任务
+                let scan_messages = messages.clone();
+
+                // 创建扫描状态标志
+                let is_scanning = Arc::new(Mutex::new(true));
+
+                // 记录扫描开始
+                let start_msg = format!(
+                    "IP扫描任务已启动: {} 到 {}, 端口: {}",
+                    start_ip, end_ip, port
+                );
+                let timestamp = get_timestamp();
+
+                // 同时记录到消息和扫描日志
+                scan_messages
+                    .lock()
+                    .unwrap()
+                    .push((timestamp.clone(), start_msg.clone()));
+                scan_logs.lock().unwrap().push((timestamp, start_msg));
+
+                // 启动扫描任务
+                tokio::spawn(async move {
+                    scan_ip_range(
+                        &start_ip,
+                        &end_ip,
+                        port,
+                        scan_messages,
+                        scan_results,
+                        scan_logs,
+                        is_scanning,
+                    )
+                    .await;
+                });
             }
         }
     }

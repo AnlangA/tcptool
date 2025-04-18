@@ -114,7 +114,7 @@ pub async fn handle_network_communications(
                         .push((get_timestamp(), "未连接，无法发送数据".to_string()));
                 }
             }
-            Message::ScanIp(start_ip, end_ip, port, scan_results, scan_logs) => {
+            Message::ScanIp(start_ip, end_ip, start_port, end_port, timeout_ms, scan_results, scan_logs) => {
                 // 创建扫描任务
                 let scan_messages = messages.clone();
 
@@ -122,9 +122,15 @@ pub async fn handle_network_communications(
                 let is_scanning = Arc::new(Mutex::new(true));
 
                 // 记录扫描开始
+                let port_range_msg = if start_port == end_port {
+                    format!("端口: {}", start_port)
+                } else {
+                    format!("端口范围: {} 到 {}", start_port, end_port)
+                };
+
                 let start_msg = format!(
-                    "IP扫描任务已启动: {} 到 {}, 端口: {}",
-                    start_ip, end_ip, port
+                    "IP扫描任务已启动: {} 到 {}, {}",
+                    start_ip, end_ip, port_range_msg
                 );
                 let timestamp = get_timestamp();
 
@@ -135,7 +141,9 @@ pub async fn handle_network_communications(
                     scan_ip_range(
                         &start_ip,
                         &end_ip,
-                        port,
+                        start_port,
+                        end_port,
+                        timeout_ms,
                         scan_messages,
                         scan_results,
                         scan_logs,

@@ -1,6 +1,6 @@
 use crate::app::TcpClientApp;
 use crate::message::Message;
-use crate::network::scanner::{is_valid_ip, is_valid_ip_range, is_valid_port};
+use crate::network::scanner::{is_valid_ip, is_valid_ip_range, is_valid_port, is_valid_port_range};
 use crate::ui::styles::{create_message_frame, get_message_background, get_message_color};
 use eframe::egui;
 use tokio::sync::mpsc;
@@ -402,11 +402,39 @@ fn render_ip_port_inputs(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.add_space(5.0);
-        ui.strong(egui::RichText::new("扫描端口:").size(16.0));
+        ui.strong(egui::RichText::new("起始端口:").size(16.0));
         ui.add(
-            egui::TextEdit::singleline(&mut app.scan_port)
+            egui::TextEdit::singleline(&mut app.start_port)
                 .desired_width(150.0)
                 .hint_text("8888")
+                .margin(egui::vec2(8.0, 6.0))
+                .text_color(egui::Color32::from_rgb(41, 128, 185)),
+        );
+    });
+
+    ui.add_space(5.0);
+
+    ui.horizontal(|ui| {
+        ui.add_space(5.0);
+        ui.strong(egui::RichText::new("结束端口:").size(16.0));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.end_port)
+                .desired_width(150.0)
+                .hint_text("8889")
+                .margin(egui::vec2(8.0, 6.0))
+                .text_color(egui::Color32::from_rgb(41, 128, 185)),
+        );
+    });
+
+    ui.add_space(5.0);
+
+    ui.horizontal(|ui| {
+        ui.add_space(5.0);
+        ui.strong(egui::RichText::new("超时时间(ms):").size(16.0));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.timeout_ms)
+                .desired_width(150.0)
+                .hint_text("500")
                 .margin(egui::vec2(8.0, 6.0))
                 .text_color(egui::Color32::from_rgb(41, 128, 185)),
         );
@@ -438,39 +466,69 @@ fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
         {
             if !app.is_scanning {
                 // 验证输入
-                if is_valid_ip(&app.start_ip)
-                    && is_valid_ip(&app.end_ip)
-                    && is_valid_port(&app.scan_port)
-                {
-                    if is_valid_ip_range(&app.start_ip, &app.end_ip) {
-                        if let Ok(port) = app.scan_port.parse::<u16>() {
-                            if let Some(tx) = &app.tx {
-                                let tx = tx.clone();
-                                let start_ip = app.start_ip.clone();
-                                let end_ip = app.end_ip.clone();
+                if is_valid_ip(&app.start_ip) && is_valid_ip(&app.end_ip) {
+                    if is_valid_port(&app.start_port) && is_valid_port(&app.end_port) {
+                        if is_valid_ip_range(&app.start_ip, &app.end_ip) {
+                            if is_valid_port_range(&app.start_port, &app.end_port) {
+                                if let (Ok(start_port), Ok(end_port)) = (app.start_port.parse::<u16>(), app.end_port.parse::<u16>()) {
+                                    if let Some(tx) = &app.tx {
+                                        let tx = tx.clone();
+                                        let start_ip = app.start_ip.clone();
+                                        let end_ip = app.end_ip.clone();
 
-                                // 发送扫描命令
-                                let scan_results = app.scan_results.clone();
-                                let scan_logs = app.scan_logs.clone();
-                                tokio::spawn(async move {
-                                    let _ = tx
-                                        .send(Message::ScanIp(
-                                            start_ip,
-                                            end_ip,
-                                            port,
-                                            scan_results,
-                                            scan_logs,
-                                        ))
-                                        .await;
-                                });
+                                        // 验证超时时间
+                                        if let Ok(timeout_ms) = app.timeout_ms.parse::<u64>() {
+                                            // 发送扫描命令
+                                            let scan_results = app.scan_results.clone();
+                                            let scan_logs = app.scan_logs.clone();
+                                            tokio::spawn(async move {
+                                                let _ = tx
+                                                    .send(Message::ScanIp(
+                                                        start_ip,
+                                                        end_ip,
+                                                        start_port,
+                                                        end_port,
+                                                        timeout_ms,
+                                                        scan_results,
+                                                        scan_logs,
+                                                    ))
+                                                    .await;
+                                            });
 
-                                app.is_scanning = true;
-                                app.scan_results.lock().unwrap().clear(); // 清空之前的结果
-                                app.scan_logs.lock().unwrap().clear(); // 清空之前的日志
+                                            app.is_scanning = true;
+                                            app.scan_results.lock().unwrap().clear(); // 清空之前的结果
+                                            app.scan_logs.lock().unwrap().clear(); // 清空之前的日志
+                                        } else {
+                                            // 超时时间格式错误
+                                            let error_msg = "超时时间格式无效";
+                                            let timestamp = get_timestamp();
+                                            app.scan_logs
+                                                .lock()
+                                                .unwrap()
+                                                .push((timestamp.clone(), error_msg.to_string()));
+                                        }
+                                    }
+                                } else {
+                                    // 端口格式错误
+                                    let error_msg = "端口格式无效";
+                                    let timestamp = get_timestamp();
+                                    app.scan_logs
+                                        .lock()
+                                        .unwrap()
+                                        .push((timestamp.clone(), error_msg.to_string()));
+                                }
+                            } else {
+                                // 端口范围无效
+                                let error_msg = "端口范围无效或超过最大扫描范围(1000个端口)";
+                                let timestamp = get_timestamp();
+                                app.scan_logs
+                                    .lock()
+                                    .unwrap()
+                                    .push((timestamp.clone(), error_msg.to_string()));
                             }
                         } else {
-                            // 端口格式错误
-                            let error_msg = "端口格式无效";
+                            // IP范围无效
+                            let error_msg = "IP范围无效或超过最大扫描范围(1000个IP)";
                             let timestamp = get_timestamp();
                             app.scan_logs
                                 .lock()
@@ -478,8 +536,8 @@ fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                                 .push((timestamp.clone(), error_msg.to_string()));
                         }
                     } else {
-                        // IP范围无效
-                        let error_msg = "IP范围无效或超过最大扫描范围(1000个IP)";
+                        // 端口格式错误
+                        let error_msg = "端口格式无效";
                         let timestamp = get_timestamp();
                         app.scan_logs
                             .lock()
@@ -487,8 +545,8 @@ fn render_scan_button(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                             .push((timestamp.clone(), error_msg.to_string()));
                     }
                 } else {
-                    // 输入格式错误
-                    let error_msg = "IP地址或端口格式无效";
+                    // IP格式错误
+                    let error_msg = "IP地址格式无效";
                     let timestamp = get_timestamp();
                     app.scan_logs
                         .lock()
@@ -566,7 +624,7 @@ fn render_scan_help_section(ui: &mut egui::Ui) {
         let tip_color = egui::Color32::from_rgb(160, 82, 45);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("•").strong().color(tip_color));
-            ui.label(egui::RichText::new("输入IP范围和端口后点击开始扫描。").color(tip_color));
+            ui.label(egui::RichText::new("输入IP范围和端口范围后点击开始扫描。").color(tip_color));
         });
         ui.add_space(5.0);
         ui.horizontal(|ui| {
@@ -576,12 +634,17 @@ fn render_scan_help_section(ui: &mut egui::Ui) {
         ui.add_space(5.0);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("•").strong().color(tip_color));
-            ui.label(egui::RichText::new("最大扫描范围为1000个IP地址。").color(tip_color));
+            ui.label(egui::RichText::new("最大扫描范围为1000个IP地址和1000个端口。").color(tip_color));
         });
         ui.add_space(5.0);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("•").strong().color(tip_color));
             ui.label(egui::RichText::new("多线程扫描可显著提高扫描速度。").color(tip_color));
+        });
+        ui.add_space(5.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("•").strong().color(tip_color));
+            ui.label(egui::RichText::new("超时时间可调整扫描的等待时间，过短可能遗漏端口，过长会降低扫描速度。").color(tip_color));
         });
     });
 }
@@ -618,7 +681,7 @@ fn render_scan_results(app: &mut TcpClientApp, ui: &mut egui::Ui) {
         .corner_radius(8.0);
 
     // 计算合适的区域大小
-    let available_height = ui.available_height() * 0.6; // 结果区域占据60%的高度
+    let available_height = ui.available_height() * 0.7; // 结果区域占据60%的高度
 
     results_frame.show(ui, |ui| {
         // 使用滑动窗口

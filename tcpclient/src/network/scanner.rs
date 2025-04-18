@@ -46,6 +46,19 @@ pub fn is_valid_port(port: &str) -> bool {
     }
 }
 
+// 检查端口范围是否有效
+pub fn is_valid_port_range(start_port: &str, end_port: &str) -> bool {
+    if !is_valid_port(start_port) || !is_valid_port(end_port) {
+        return false;
+    }
+
+    let start = start_port.parse::<u16>().unwrap();
+    let end = end_port.parse::<u16>().unwrap();
+
+    // 检查范围是否有效，并限制最大扫描范围为1000个端口
+    start <= end && end - start <= 1000
+}
+
 // 检查IP范围是否有效
 pub fn is_valid_ip_range(start_ip: &str, end_ip: &str) -> bool {
     if !is_valid_ip(start_ip) || !is_valid_ip(end_ip) {
@@ -62,9 +75,9 @@ pub fn is_valid_ip_range(start_ip: &str, end_ip: &str) -> bool {
 }
 
 // 异步检查单个IP和端口是否开放
-async fn check_port(ip: &str, port: u16) -> bool {
+async fn check_port(ip: &str, port: u16, timeout_ms: u64) -> bool {
     let addr = format!("{}:{}", ip, port);
-    match timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await {
+    match timeout(Duration::from_millis(timeout_ms), TcpStream::connect(&addr)).await {
         Ok(Ok(_)) => true,
         _ => false,
     }
@@ -74,8 +87,10 @@ async fn check_port(ip: &str, port: u16) -> bool {
 pub async fn scan_ip_range(
     start_ip: &str,
     end_ip: &str,
-    port: u16,
-    messages: Arc<Mutex<Vec<(String, String)>>>,
+    start_port: u16,
+    end_port: u16,
+    timeout_ms: u64,
+    _messages: Arc<Mutex<Vec<(String, String)>>>,
     scan_results: Arc<Mutex<Vec<String>>>,
     scan_logs: Arc<Mutex<Vec<(String, String)>>>,
     is_scanning: Arc<Mutex<bool>>,
@@ -85,7 +100,13 @@ pub async fn scan_ip_range(
     scan_logs.lock().unwrap().clear();
 
     // 记录扫描开始
-    let start_msg = format!("开始扫描IP范围: {} 到 {}, 端口: {}", start_ip, end_ip, port);
+    let port_range_msg = if start_port == end_port {
+        format!("端口: {}", start_port)
+    } else {
+        format!("端口范围: {} 到 {}", start_port, end_port)
+    };
+
+    let start_msg = format!("开始扫描IP范围: {} 到 {}, {}", start_ip, end_ip, port_range_msg);
     let timestamp = get_timestamp();
 
     scan_logs.lock().unwrap().push((timestamp, start_msg));
@@ -93,7 +114,9 @@ pub async fn scan_ip_range(
     // 转换IP地址为数字表示
     if let (Some(start), Some(end)) = (ip_to_u32(start_ip), ip_to_u32(end_ip)) {
         let total_ips = end - start + 1;
-        let total_msg = format!("总共需要扫描 {} 个IP地址", total_ips);
+        let total_ports = (end_port - start_port + 1) as u32;
+        let total_scans = total_ips * total_ports;
+        let total_msg = format!("总共需要扫描 {} 个IP地址, {} 个端口, 共 {} 次扫描", total_ips, total_ports, total_scans);
         let timestamp = get_timestamp();
         scan_logs.lock().unwrap().push((timestamp, total_msg));
 
@@ -153,23 +176,32 @@ pub async fn scan_ip_range(
                         scan_logs.lock().unwrap().push((timestamp, progress_msg));
                     }
 
-                    // 检查端口是否开放
-                    if check_port(&ip_str, port).await {
-                        open_ports.fetch_add(1, Ordering::Relaxed);
-                        let result = format!("{} - 开放", ip_str);
-                        scan_results.lock().unwrap().push(result.clone());
+                    // 扫描每个IP的所有端口范围
+                    for port in start_port..=end_port {
+                        // 再次检查是否取消扫描
+                        if !*is_scanning.lock().unwrap() || is_cancelled.load(Ordering::Relaxed) {
+                            is_cancelled.store(true, Ordering::Relaxed);
+                            break;
+                        }
 
-                        let found_msg = format!("发现开放端口: {}:{}", ip_str, port);
-                        let timestamp = get_timestamp();
+                        // 检查端口是否开放
+                        if check_port(&ip_str, port, timeout_ms).await {
+                            open_ports.fetch_add(1, Ordering::Relaxed);
+                            let result = format!("{} - 端口 {} 开放", ip_str, port);
+                            scan_results.lock().unwrap().push(result.clone());
 
-                        scan_logs.lock().unwrap().push((timestamp, found_msg));
-                    } else {
-                        // 只在扫描日志中记录关闭的端口，不在主消息区显示
-                        let closed_msg = format!("{} - 端口关闭", ip_str);
-                        scan_logs
-                            .lock()
-                            .unwrap()
-                            .push((get_timestamp(), closed_msg));
+                            let found_msg = format!("发现开放端口: {}:{}", ip_str, port);
+                            let timestamp = get_timestamp();
+
+                            scan_logs.lock().unwrap().push((timestamp, found_msg));
+                        } else {
+                            // 只在扫描日志中记录关闭的端口，不在主消息区显示
+                            let closed_msg = format!("{} - 端口 {} 关闭", ip_str, port);
+                            scan_logs
+                                .lock()
+                                .unwrap()
+                                .push((get_timestamp(), closed_msg));
+                        }
                     }
                 }
             });

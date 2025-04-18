@@ -23,7 +23,9 @@ pub struct TcpClientApp {
     // IP扫描相关状态
     pub start_ip: String,
     pub end_ip: String,
-    pub scan_port: String,
+    pub start_port: String,
+    pub end_port: String,
+    pub timeout_ms: String,
     pub is_scanning: bool,
     pub scan_results: Arc<Mutex<Vec<String>>>, // 扫描结果列表
     pub scan_logs: Arc<Mutex<Vec<(String, String)>>>, // 扫描日志列表 (时间戳, 日志内容)
@@ -53,7 +55,9 @@ impl Default for TcpClientApp {
             // IP扫描相关状态初始化
             start_ip: "127.0.0.1".to_string(),
             end_ip: "127.0.0.10".to_string(),
-            scan_port: "8888".to_string(),
+            start_port: "8888".to_string(),
+            end_port: "8889".to_string(),
+            timeout_ms: "500".to_string(),
             is_scanning: false,
             scan_results: Arc::new(Mutex::new(Vec::new())),
             scan_logs: Arc::new(Mutex::new(Vec::new())),
@@ -134,7 +138,7 @@ impl TcpClientApp {
 
         //底部面板 - 扫描日志
         egui::TopBottomPanel::bottom("scan_logs_panel")
-            .height_range(egui::Rangef::new(400.0, 400.0))
+            .height_range(egui::Rangef::new(300.0, 400.0))
             .resizable(true)
             .show(ctx, |ui| {
                 render_scan_logs(self, ui);

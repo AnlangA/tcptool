@@ -1,3 +1,4 @@
+use crate::app::EncodingMode;
 use crate::utils::get_timestamp;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
@@ -6,6 +7,7 @@ use tokio::io::AsyncReadExt;
 pub async fn handle_data_reception(
     messages: Arc<Mutex<Vec<(String, String)>>>,
     mut port: tokio::net::tcp::OwnedReadHalf,
+    encoding_mode: Arc<Mutex<EncodingMode>>,
 ) {
     messages
         .lock()
@@ -26,23 +28,42 @@ pub async fn handle_data_reception(
                 break;
             }
             Ok(n) => {
-                // 处理收到的数据
-                match String::from_utf8(read_buffer[..n].to_vec()) {
-                    Ok(data) => {
-                        messages
-                            .lock()
-                            .unwrap()
-                            .push((get_timestamp(), format!("收到: {}", data)));
-                    }
-                    Err(_) => {
-                        // 处理非UTF-8数据
+                // 根据当前编码模式处理收到的数据
+                let current_mode = *encoding_mode.lock().unwrap();
+
+                match current_mode {
+                    EncodingMode::Utf8 => {
+                        // UTF-8模式下尝试解析为UTF-8文本
+                        match String::from_utf8(read_buffer[..n].to_vec()) {
+                            Ok(data) => {
+                                messages
+                                    .lock()
+                                    .unwrap()
+                                    .push((get_timestamp(), format!("收到(UTF-8): {}", data)));
+                            }
+                            Err(_) => {
+                                // 如果不是有效的UTF-8，则显示为十六进制
+                                let hex_data: Vec<String> = read_buffer[..n]
+                                    .iter()
+                                    .map(|b| format!("{:02X}", b))
+                                    .collect();
+                                messages.lock().unwrap().push((
+                                    get_timestamp(),
+                                    format!("收到(非UTF-8数据): {}", hex_data.join(" ")),
+                                ));
+                            }
+                        }
+                    },
+                    EncodingMode::Hex => {
+                        // 十六进制模式下直接显示为十六进制，不尝试转换为文本
                         let hex_data: Vec<String> = read_buffer[..n]
                             .iter()
                             .map(|b| format!("{:02X}", b))
                             .collect();
+
                         messages.lock().unwrap().push((
                             get_timestamp(),
-                            format!("收到二进制数据: {}", hex_data.join(" ")),
+                            format!("收到(HEX): {}", hex_data.join(" ")),
                         ));
                     }
                 }

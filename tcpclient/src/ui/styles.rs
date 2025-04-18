@@ -46,26 +46,44 @@ pub fn create_message_frame(item_bg: egui::Color32) -> egui::Frame {
 
 // 获取消息颜色
 pub fn get_message_color(msg: &str) -> egui::Color32 {
-    if msg.starts_with("收到:") {
-        egui::Color32::from_rgb(0, 100, 0)
+    if msg.starts_with("收到(UTF-8):") {
+        egui::Color32::from_rgb(0, 120, 0) // 深绿色用于UTF-8接收消息
+    } else if msg.starts_with("收到(HEX):") {
+        egui::Color32::from_rgb(128, 0, 128) // 紫色用于十六进制接收消息
+    } else if msg.starts_with("收到(非UTF-8数据):") {
+        egui::Color32::from_rgb(160, 82, 45) // 棕色用于非UTF-8数据
+    } else if msg.starts_with("收到:") {
+        egui::Color32::from_rgb(0, 100, 0) // 原始的接收消息颜色
+    } else if msg.starts_with("已发送(UTF-8):") {
+        egui::Color32::from_rgb(0, 0, 180) // 蓝色用于UTF-8发送消息
+    } else if msg.starts_with("已发送(HEX):") {
+        egui::Color32::from_rgb(70, 30, 180) // 深蓝紫色用于十六进制发送消息
     } else if msg.starts_with("已发送:") {
-        egui::Color32::from_rgb(0, 0, 150)
+        egui::Color32::from_rgb(0, 0, 150) // 原始的发送消息颜色
     } else if msg.contains("失败") || msg.contains("错误") || msg.contains("中断") {
-        egui::Color32::from_rgb(180, 0, 0)
+        egui::Color32::from_rgb(180, 0, 0) // 红色用于错误消息
     } else if msg.contains("连接到") {
-        egui::Color32::from_rgb(0, 128, 128)
+        egui::Color32::from_rgb(0, 128, 128) // 青色用于连接消息
     } else {
-        egui::Color32::GRAY
+        egui::Color32::GRAY // 灰色用于其他消息
     }
 }
 
 // 获取消息背景颜色
 pub fn get_message_background(msg: &str) -> egui::Color32 {
-    if msg.starts_with("收到:") {
-        egui::Color32::from_rgba_unmultiplied(230, 255, 230, 255)
-    } else if msg.starts_with("已发送:") {
-        egui::Color32::from_rgba_unmultiplied(230, 230, 255, 255)
+    if msg.starts_with("收到(UTF-8):") || msg.starts_with("收到:") {
+        egui::Color32::from_rgba_unmultiplied(230, 255, 230, 255) // 浅绿色背景用于UTF-8接收消息
+    } else if msg.starts_with("收到(HEX):") {
+        egui::Color32::from_rgba_unmultiplied(245, 230, 255, 255) // 浅紫色背景用于十六进制接收消息
+    } else if msg.starts_with("收到(非UTF-8数据):") {
+        egui::Color32::from_rgba_unmultiplied(255, 240, 230, 255) // 浅棕色背景用于非UTF-8数据
+    } else if msg.starts_with("已发送(UTF-8):") || msg.starts_with("已发送:") {
+        egui::Color32::from_rgba_unmultiplied(230, 230, 255, 255) // 浅蓝色背景用于UTF-8发送消息
+    } else if msg.starts_with("已发送(HEX):") {
+        egui::Color32::from_rgba_unmultiplied(235, 230, 250, 255) // 浅蓝紫色背景用于十六进制发送消息
+    } else if msg.contains("失败") || msg.contains("错误") || msg.contains("中断") {
+        egui::Color32::from_rgba_unmultiplied(255, 230, 230, 255) // 浅红色背景用于错误消息
     } else {
-        egui::Color32::from_rgba_unmultiplied(245, 245, 250, 255)
+        egui::Color32::from_rgba_unmultiplied(245, 245, 250, 255) // 浅灰色背景用于其他消息
     }
 }

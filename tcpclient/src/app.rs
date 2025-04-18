@@ -19,6 +19,7 @@ pub struct TcpClientApp {
     pub received_messages: Arc<Mutex<Vec<(String, String)>>>, // (时间戳, 消息)
     pub send_text: String,
     pub should_scroll_to_bottom: bool,
+    pub shared_encoding_mode: Arc<Mutex<EncodingMode>>, // 共享的编码模式，用于网络通信
 
     // IP扫描相关状态
     pub start_ip: String,
@@ -32,6 +33,7 @@ pub struct TcpClientApp {
 
     // 界面相关状态
     pub current_view: AppView, // 当前显示的界面
+    pub encoding_mode: EncodingMode, // UI中显示的编码模式
 }
 
 // 定义应用界面类型
@@ -41,8 +43,18 @@ pub enum AppView {
     Scan,       // 扫描界面
 }
 
+// 定义数据编码模式
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum EncodingMode {
+    Utf8,  // UTF-8编码
+    Hex    // 十六进制编码
+}
+
 impl Default for TcpClientApp {
     fn default() -> Self {
+        // 创建默认的编码模式
+        let default_encoding_mode = Arc::new(Mutex::new(EncodingMode::Utf8));
+
         Self {
             ip: "127.0.0.1".to_string(),
             port: "8888".to_string(),
@@ -51,6 +63,7 @@ impl Default for TcpClientApp {
             received_messages: Arc::new(Mutex::new(Vec::new())),
             send_text: String::new(),
             should_scroll_to_bottom: true,
+            shared_encoding_mode: default_encoding_mode,
 
             // IP扫描相关状态初始化
             start_ip: "127.0.0.1".to_string(),
@@ -64,6 +77,7 @@ impl Default for TcpClientApp {
 
             // 界面相关状态初始化
             current_view: AppView::Connection,
+            encoding_mode: EncodingMode::Utf8,
         }
     }
 }
@@ -77,10 +91,14 @@ impl TcpClientApp {
         let (tx, rx) = mpsc::channel::<Message>(100);
         let received_messages = Arc::new(Mutex::new(Vec::new()));
 
+        // 创建共享的编码模式
+        let encoding_mode = Arc::new(Mutex::new(EncodingMode::Utf8));
+
         // 启动异步任务处理网络通信
         let messages_clone = received_messages.clone();
+        let encoding_mode_clone = encoding_mode.clone();
         tokio::spawn(async move {
-            handle_network_communications(rx, messages_clone).await;
+            handle_network_communications(rx, messages_clone, encoding_mode_clone).await;
         });
 
         Self {
@@ -89,6 +107,7 @@ impl TcpClientApp {
             received_messages,
             send_text: String::new(),
             should_scroll_to_bottom: true,
+            shared_encoding_mode: encoding_mode,
 
             // IP扫描相关状态初始化
             is_scanning: false,
@@ -97,6 +116,7 @@ impl TcpClientApp {
 
             // 界面相关状态初始化
             current_view: AppView::Connection,
+            encoding_mode: EncodingMode::Utf8, // 默认编码模式，与共享的encoding_mode保持一致
 
             ..Default::default()
         }

@@ -1,9 +1,11 @@
+use crate::app::EncodingMode;
+
 // 定义消息类型
 #[derive(Debug)]
 pub enum Message {
     Connect(String, u16),
     Disconnect,
-    Send(String),
+    Send(String, EncodingMode), // 发送数据，包含编码模式
     ScanIp(
         String,
         String,

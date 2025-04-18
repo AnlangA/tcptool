@@ -1,3 +1,4 @@
+use crate::app::EncodingMode;
 use crate::message::Message;
 use crate::network::handle_data_reception;
 use crate::network::scanner::scan_ip_range;
@@ -11,6 +12,7 @@ use tokio::sync::mpsc;
 pub async fn handle_network_communications(
     mut rx: mpsc::Receiver<Message>,
     messages: Arc<Mutex<Vec<(String, String)>>>,
+    encoding_mode: Arc<Mutex<EncodingMode>>,
 ) {
     // 创建一个通道来管理TcpStream的所有权
     let (conn_tx, mut conn_rx) = mpsc::channel::<tokio::net::tcp::OwnedWriteHalf>(10);
@@ -46,8 +48,9 @@ pub async fn handle_network_communications(
                         let _recv_addr = connect_addr.clone();
                         let recv_messages = messages.clone();
                         let _conn_tx_clone = conn_tx.clone();
+                        let recv_encoding_mode = encoding_mode.clone();
                         tokio::spawn(async move {
-                            handle_data_reception(recv_messages, read_half).await;
+                            handle_data_reception(recv_messages, read_half, recv_encoding_mode).await;
                         });
                     }
                     Err(e) => {
@@ -69,7 +72,7 @@ pub async fn handle_network_communications(
                         .push((get_timestamp(), "已断开连接".to_string()));
                 }
             }
-            Message::Send(data) => {
+            Message::Send(data, encoding_mode) => {
                 if has_connection {
                     // 尝试从通道获取连接
                     match conn_rx.try_recv() {
@@ -80,11 +83,37 @@ pub async fn handle_network_communications(
 
                             // 在单独的任务中发送数据
                             tokio::spawn(async move {
-                                match stream.write_all(send_data.as_bytes()).await {
+                                // 根据编码模式处理数据
+                                let bytes_to_send = match encoding_mode {
+                                    EncodingMode::Utf8 => send_data.as_bytes().to_vec(),
+                                    EncodingMode::Hex => {
+                                        // 将十六进制字符串转换为字节
+                                        let mut bytes = Vec::new();
+                                        let hex_str = send_data.replace(" ", ""); // 移除空格
+
+                                        // 每两个字符转换为一个字节
+                                        for i in (0..hex_str.len()).step_by(2) {
+                                            if i + 1 < hex_str.len() {
+                                                if let Ok(byte) = u8::from_str_radix(&hex_str[i..i+2], 16) {
+                                                    bytes.push(byte);
+                                                }
+                                            }
+                                        }
+                                        bytes
+                                    }
+                                };
+
+                                match stream.write_all(&bytes_to_send).await {
                                     Ok(_) => {
+                                        // 根据编码模式显示不同的消息
+                                        let display_msg = match encoding_mode {
+                                            EncodingMode::Utf8 => format!("已发送(UTF-8): {}", send_data),
+                                            EncodingMode::Hex => format!("已发送(HEX): {}", send_data),
+                                        };
+
                                         send_messages.lock().unwrap().push((
                                             get_timestamp(),
-                                            format!("已发送: {}", send_data),
+                                            display_msg,
                                         ));
                                         // 将连接放回通道
                                         let _ = conn_tx_clone.send(stream).await;

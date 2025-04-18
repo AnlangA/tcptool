@@ -1,4 +1,4 @@
-use crate::app::TcpClientApp;
+use crate::app::{EncodingMode, TcpClientApp};
 use crate::message::Message;
 use crate::network::scanner::{is_valid_ip, is_valid_ip_range, is_valid_port, is_valid_port_range};
 use crate::ui::styles::{create_message_frame, get_message_background, get_message_color};
@@ -36,6 +36,30 @@ pub fn render_settings_panel(app: &mut TcpClientApp, ui: &mut egui::Ui) {
                     .desired_width(120.0)
                     .hint_text("输入端口"),
             );
+        });
+
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(5.0);
+
+        // 添加数据编码模式选择
+        ui.vertical(|ui| {
+            ui.strong("数据编码模式:");
+            ui.add_space(5.0);
+
+            ui.horizontal(|ui| {
+                // 当用户选择UTF-8模式
+                if ui.radio_value(&mut app.encoding_mode, EncodingMode::Utf8, "UTF-8").clicked() {
+                    // 同步到共享的编码模式
+                    *app.shared_encoding_mode.lock().unwrap() = EncodingMode::Utf8;
+                }
+
+                // 当用户选择十六进制模式
+                if ui.radio_value(&mut app.encoding_mode, EncodingMode::Hex, "十六进制(HEX)").clicked() {
+                    // 同步到共享的编码模式
+                    *app.shared_encoding_mode.lock().unwrap() = EncodingMode::Hex;
+                }
+            });
         });
     });
 
@@ -213,12 +237,49 @@ fn render_message_input_area(app: &mut TcpClientApp, ui: &mut egui::Ui) {
     let input_frame = create_input_frame();
 
     input_frame.show(ui, |ui| {
+        // 根据编码模式显示不同的提示文本
+        let hint_text = match app.encoding_mode {
+            EncodingMode::Utf8 => "输入要发送的UTF-8消息...",
+            EncodingMode::Hex => "输入要发送的十六进制数据(如: 48 65 6C 6C 6F)...",
+        };
+
         let text_edit = egui::TextEdit::multiline(&mut app.send_text)
             .desired_width(f32::INFINITY)
             .desired_rows(3)
-            .hint_text("输入要发送的消息...");
+            .hint_text(hint_text);
+
         ui.add(text_edit);
+
+        // 如果是十六进制模式，验证输入
+        if app.encoding_mode == EncodingMode::Hex && !app.send_text.is_empty() {
+            if !is_valid_hex_string(&app.send_text) {
+                ui.add_space(5.0);
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 50, 50),
+                    "无效的十六进制格式，请使用空格分隔的十六进制值(如: 48 65 6C 6C 6F)"
+                );
+            }
+        }
     });
+}
+
+// 验证十六进制字符串是否有效
+fn is_valid_hex_string(s: &str) -> bool {
+    // 允许空格分隔的十六进制字符串
+    let hex_str = s.replace(" ", "");
+
+    // 如果去除空格后为空，则返回true
+    if hex_str.is_empty() {
+        return true;
+    }
+
+    // 检查长度是否为偶数
+    if hex_str.len() % 2 != 0 {
+        return false;
+    }
+
+    // 检查每个字符是否是有效的十六进制字符
+    hex_str.chars().all(|c| c.is_digit(16))
 }
 
 // 创建输入框架
@@ -238,8 +299,15 @@ fn render_send_controls(app: &mut TcpClientApp, ui: &mut egui::Ui) {
 
             ui.add_space(10.0);
 
+            // 检查十六进制格式是否有效
+            let hex_valid = if app.encoding_mode == EncodingMode::Hex && !app.send_text.is_empty() {
+                is_valid_hex_string(&app.send_text)
+            } else {
+                true
+            };
+
             // 发送按钮
-            let send_enabled = !app.send_text.is_empty() && app.is_connected;
+            let send_enabled = !app.send_text.is_empty() && app.is_connected && hex_valid;
             let send_button = create_send_button();
 
             let send_response = if send_enabled {
@@ -279,10 +347,23 @@ fn create_send_button() -> egui::Button<'static> {
 
 // 处理发送按钮点击
 fn handle_send_button_click(app: &mut TcpClientApp) {
+    // 如果是十六进制模式，验证输入
+    if app.encoding_mode == EncodingMode::Hex && !app.send_text.is_empty() {
+        if !is_valid_hex_string(&app.send_text) {
+            // 如果十六进制格式无效，不发送
+            app.received_messages.lock().unwrap().push((
+                get_timestamp(),
+                "无法发送: 十六进制格式无效".to_string(),
+            ));
+            return;
+        }
+    }
+
     if let Some(tx) = &app.tx {
         let tx = tx.clone();
         let text = app.send_text.clone();
-        send_message(&tx, text);
+        let encoding_mode = app.encoding_mode;
+        send_message(&tx, text, encoding_mode);
         app.send_text.clear();
     }
 }
@@ -813,9 +894,9 @@ fn get_timestamp() -> String {
 }
 
 // 发送消息的工具函数
-pub fn send_message(tx: &mpsc::Sender<Message>, text: String) {
+pub fn send_message(tx: &mpsc::Sender<Message>, text: String, encoding_mode: EncodingMode) {
     let tx = tx.clone();
     tokio::spawn(async move {
-        let _ = tx.send(Message::Send(text)).await;
+        let _ = tx.send(Message::Send(text, encoding_mode)).await;
     });
 }

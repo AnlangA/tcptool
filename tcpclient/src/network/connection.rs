@@ -2,7 +2,7 @@ use crate::app::EncodingMode;
 use crate::message::Message;
 use crate::network::handle_data_reception;
 use crate::network::scanner::scan_ip_range;
-use crate::utils::get_timestamp;
+use crate::utils::{get_timestamp, create_data_file};
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -19,6 +19,9 @@ pub async fn handle_network_communications(
     // 创建一个通道来管理TCP接收端口 - 修复未使用的变量警告
     let (_port_tx, _port_rx) = mpsc::channel::<tokio::net::tcp::OwnedReadHalf>(10);
     let mut has_connection = false;
+
+    // 创建一个可选的文件句柄，用于在发送数据时使用
+    let mut data_file: Option<Arc<Mutex<std::fs::File>>> = None;
 
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -37,23 +40,57 @@ pub async fn handle_network_communications(
                             .push((get_timestamp(), format!("已连接到 {}", connect_addr)));
                         has_connection = true;
 
-                        // 将stream分为发送和接收两个部分
-                        let (read_half, write_half) = stream.into_split();
+                        // 创建数据保存文件
+                        let file_result = create_data_file(&addr, port);
+                        match file_result {
+                            Ok((file, filepath)) => {
+                                messages
+                                    .lock()
+                                    .unwrap()
+                                    .push((get_timestamp(), format!("创建数据文件: {}", filepath)));
 
-                        // 将新连接放入通道
-                        let _ = conn_tx.send(write_half).await;
+                                // 将stream分为发送和接收两个部分
+                                let (read_half, write_half) = stream.into_split();
 
-                        // 启动单独的异步任务处理数据接收
-                        // 修复未使用的变量警告
-                        let _recv_addr = connect_addr.clone();
-                        let recv_messages = messages.clone();
-                        let _conn_tx_clone = conn_tx.clone();
-                        let recv_encoding_mode = encoding_mode.clone();
-                        tokio::spawn(async move {
-                            handle_data_reception(recv_messages, read_half, recv_encoding_mode).await;
-                        });
+                                // 将新连接放入通道
+                                let _ = conn_tx.send(write_half).await;
+
+                                // 创建文件句柄并保存到全局变量
+                                let file_arc = Arc::new(Mutex::new(file));
+                                data_file = Some(file_arc.clone());
+
+                                // 启动单独的异步任务处理数据接收
+                                let recv_messages = messages.clone();
+                                let recv_encoding_mode = encoding_mode.clone();
+                                tokio::spawn(async move {
+                                    handle_data_reception(recv_messages, read_half, recv_encoding_mode, Some(file_arc)).await;
+                                });
+                            },
+                            Err(e) => {
+                                messages
+                                    .lock()
+                                    .unwrap()
+                                    .push((get_timestamp(), format!("创建数据文件失败: {}", e)));
+
+                                // 将stream分为发送和接收两个部分
+                                let (read_half, write_half) = stream.into_split();
+
+                                // 将新连接放入通道
+                                let _ = conn_tx.send(write_half).await;
+
+                                // 启动单独的异步任务处理数据接收（不带文件）
+                                let recv_messages = messages.clone();
+                                let recv_encoding_mode = encoding_mode.clone();
+                                tokio::spawn(async move {
+                                    handle_data_reception(recv_messages, read_half, recv_encoding_mode, None).await;
+                                });
+                            }
+                        }
                     }
                     Err(e) => {
+                        // 清除文件句柄
+                        data_file = None;
+
                         messages
                             .lock()
                             .unwrap()
@@ -66,6 +103,24 @@ pub async fn handle_network_communications(
                     // 清空通道
                     while conn_rx.try_recv().is_ok() {}
                     has_connection = false;
+
+                    // 在文件中记录断开连接信息
+                    if let Some(file_arc) = &data_file {
+                        if let Ok(mut file_guard) = file_arc.lock() {
+                            use crate::utils::write_to_file;
+                            let disconnect_msg = "已断开连接";
+                            if let Err(e) = write_to_file(&mut file_guard, disconnect_msg) {
+                                messages
+                                    .lock()
+                                    .unwrap()
+                                    .push((get_timestamp(), format!("写入文件失败: {}", e)));
+                            }
+                        }
+                    }
+
+                    // 清除文件句柄
+                    data_file = None;
+
                     messages
                         .lock()
                         .unwrap()
@@ -80,6 +135,9 @@ pub async fn handle_network_communications(
                             let send_messages = messages.clone();
                             let send_data = data.clone();
                             let conn_tx_clone = conn_tx.clone();
+
+                            // 获取文件句柄的副本（如果有）
+                            let file_clone = data_file.clone();
 
                             // 在单独的任务中发送数据
                             tokio::spawn(async move {
@@ -111,10 +169,25 @@ pub async fn handle_network_communications(
                                             EncodingMode::Hex => format!("已发送(HEX): {}", send_data),
                                         };
 
+                                        // 将消息添加到UI显示
                                         send_messages.lock().unwrap().push((
                                             get_timestamp(),
-                                            display_msg,
+                                            display_msg.clone(),
                                         ));
+
+                                        // 如果有文件句柄，将发送的数据写入文件
+                                        if let Some(file_arc) = &file_clone {
+                                            if let Ok(mut file_guard) = file_arc.lock() {
+                                                use crate::utils::write_to_file;
+                                                if let Err(e) = write_to_file(&mut file_guard, &display_msg) {
+                                                    send_messages
+                                                        .lock()
+                                                        .unwrap()
+                                                        .push((get_timestamp(), format!("写入文件失败: {}", e)));
+                                                }
+                                            }
+                                        }
+
                                         // 将连接放回通道
                                         let _ = conn_tx_clone.send(stream).await;
                                     }

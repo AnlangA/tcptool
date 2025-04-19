@@ -83,6 +83,74 @@ async fn check_port(ip: &str, port: u16, timeout_ms: u64) -> bool {
     }
 }
 
+// 并行扫描多个端口
+async fn scan_ports(
+    ip: &str,
+    start_port: u16,
+    end_port: u16,
+    timeout_ms: u64,
+    scan_results: &Arc<Mutex<Vec<String>>>,
+    scan_logs: &Arc<Mutex<Vec<(String, String)>>>,
+    open_ports: &Arc<AtomicUsize>,
+    is_scanning: &Arc<Mutex<bool>>,
+    is_cancelled: &Arc<AtomicBool>,
+) -> usize {
+    let mut found_count = 0;
+    let mut port_tasks = Vec::new();
+    let chunk_size = 50; // 每批并行扫描的端口数
+
+    // 分批并行扫描端口
+    for port_chunk_start in (start_port..=end_port).step_by(chunk_size) {
+        let port_chunk_end = std::cmp::min(port_chunk_start + chunk_size as u16 - 1, end_port);
+
+        for port in port_chunk_start..=port_chunk_end {
+            // 检查是否取消扫描
+            if !*is_scanning.lock().unwrap() || is_cancelled.load(Ordering::Relaxed) {
+                is_cancelled.store(true, Ordering::Relaxed);
+                return found_count;
+            }
+
+            let ip = ip.to_string();
+            let scan_results = Arc::clone(scan_results);
+            let scan_logs = Arc::clone(scan_logs);
+            let open_ports = Arc::clone(open_ports);
+
+            let task = tokio::spawn(async move {
+                if check_port(&ip, port, timeout_ms).await {
+                    open_ports.fetch_add(1, Ordering::Relaxed);
+                    let result = format!("{} - 端口 {} 开放", ip, port);
+                    scan_results.lock().unwrap().push(result.clone());
+
+                    let found_msg = format!("发现开放端口: {}:{}", ip, port);
+                    scan_logs.lock().unwrap().push((get_timestamp(), found_msg));
+                    true
+                } else {
+                    false
+                }
+            });
+
+            port_tasks.push(task);
+        }
+
+        // 等待当前批次完成
+        for result in join_all(port_tasks).await {
+            if let Ok(is_open) = result {
+                if is_open {
+                    found_count += 1;
+                }
+            }
+        }
+
+        // 重置任务列表为下一批次
+        port_tasks = Vec::new();
+
+        // 给系统一些时间处理其他任务
+        tokio::task::yield_now().await;
+    }
+
+    found_count
+}
+
 // 执行IP扫描
 pub async fn scan_ip_range(
     start_ip: &str,
@@ -107,9 +175,7 @@ pub async fn scan_ip_range(
     };
 
     let start_msg = format!("开始扫描IP范围: {} 到 {}, {}", start_ip, end_ip, port_range_msg);
-    let timestamp = get_timestamp();
-
-    scan_logs.lock().unwrap().push((timestamp, start_msg));
+    scan_logs.lock().unwrap().push((get_timestamp(), start_msg));
 
     // 转换IP地址为数字表示
     if let (Some(start), Some(end)) = (ip_to_u32(start_ip), ip_to_u32(end_ip)) {
@@ -117,8 +183,7 @@ pub async fn scan_ip_range(
         let total_ports = (end_port - start_port + 1) as u32;
         let total_scans = total_ips * total_ports;
         let total_msg = format!("总共需要扫描 {} 个IP地址, {} 个端口, 共 {} 次扫描", total_ips, total_ports, total_scans);
-        let timestamp = get_timestamp();
-        scan_logs.lock().unwrap().push((timestamp, total_msg));
+        scan_logs.lock().unwrap().push((get_timestamp(), total_msg));
 
         // 使用原子计数器来跟踪进度和结果
         let scanned = Arc::new(AtomicUsize::new(0));
@@ -128,14 +193,12 @@ pub async fn scan_ip_range(
         // 确定线程数量 - 根据IP数量和系统CPU核心数动态调整
         let cpu_cores = num_cpus::get();
         let total_ips_usize = total_ips as usize;
-        let batch_size = std::cmp::max(1, total_ips_usize / (cpu_cores * 2));
+        let batch_size = std::cmp::max(1, total_ips_usize / cpu_cores);
 
         // 记录使用的线程数
-        let thread_count = std::cmp::min(total_ips_usize, cpu_cores * 2);
+        let thread_count = std::cmp::min(total_ips_usize, cpu_cores);
         let thread_msg = format!("使用 {} 个线程进行扫描", thread_count);
-        let timestamp = get_timestamp();
-
-        scan_logs.lock().unwrap().push((timestamp, thread_msg));
+        scan_logs.lock().unwrap().push((get_timestamp(), thread_msg));
 
         // 创建任务集合
         let mut tasks = Vec::new();
@@ -165,44 +228,28 @@ pub async fn scan_ip_range(
                     let ip_str = u32_to_ip(ip_num);
                     let current_scanned = scanned.fetch_add(1, Ordering::Relaxed) + 1;
 
-                    // 更新进度 (每10个IP或批次结束时)
-                    if current_scanned % 10 == 0 || current_scanned == total_ips_usize {
+                    // 更新进度 (每5个IP或批次结束时)
+                    if current_scanned % 5 == 0 || current_scanned == total_ips_usize {
                         let progress_percent = (current_scanned * 100) / total_ips_usize;
                         let progress_msg = format!(
                             "扫描进度: {}/{} ({}%)",
                             current_scanned, total_ips_usize, progress_percent
                         );
-                        let timestamp = get_timestamp();
-                        scan_logs.lock().unwrap().push((timestamp, progress_msg));
+                        scan_logs.lock().unwrap().push((get_timestamp(), progress_msg));
                     }
 
-                    // 扫描每个IP的所有端口范围
-                    for port in start_port..=end_port {
-                        // 再次检查是否取消扫描
-                        if !*is_scanning.lock().unwrap() || is_cancelled.load(Ordering::Relaxed) {
-                            is_cancelled.store(true, Ordering::Relaxed);
-                            break;
-                        }
-
-                        // 检查端口是否开放
-                        if check_port(&ip_str, port, timeout_ms).await {
-                            open_ports.fetch_add(1, Ordering::Relaxed);
-                            let result = format!("{} - 端口 {} 开放", ip_str, port);
-                            scan_results.lock().unwrap().push(result.clone());
-
-                            let found_msg = format!("发现开放端口: {}:{}", ip_str, port);
-                            let timestamp = get_timestamp();
-
-                            scan_logs.lock().unwrap().push((timestamp, found_msg));
-                        } else {
-                            // 只在扫描日志中记录关闭的端口，不在主消息区显示
-                            let closed_msg = format!("{} - 端口 {} 关闭", ip_str, port);
-                            scan_logs
-                                .lock()
-                                .unwrap()
-                                .push((get_timestamp(), closed_msg));
-                        }
-                    }
+                    // 使用优化的端口扫描函数
+                    scan_ports(
+                        &ip_str,
+                        start_port,
+                        end_port,
+                        timeout_ms,
+                        &scan_results,
+                        &scan_logs,
+                        &open_ports,
+                        &is_scanning,
+                        &is_cancelled
+                    ).await;
                 }
             });
 
@@ -215,9 +262,7 @@ pub async fn scan_ip_range(
         // 检查是否被取消
         if is_cancelled.load(Ordering::Relaxed) {
             let cancel_msg = "扫描已取消".to_string();
-            let timestamp = get_timestamp();
-
-            scan_logs.lock().unwrap().push((timestamp, cancel_msg));
+            scan_logs.lock().unwrap().push((get_timestamp(), cancel_msg));
         }
 
         // 获取最终计数
@@ -229,15 +274,10 @@ pub async fn scan_ip_range(
             "扫描完成. 共扫描 {} 个IP, 发现 {} 个开放端口",
             final_scanned, final_open_ports
         );
-        let timestamp = get_timestamp();
-
-
-        scan_logs.lock().unwrap().push((timestamp, complete_msg));
+        scan_logs.lock().unwrap().push((get_timestamp(), complete_msg));
     } else {
         let error_msg = "IP地址格式无效，无法开始扫描".to_string();
-        let timestamp = get_timestamp();
-
-        scan_logs.lock().unwrap().push((timestamp, error_msg));
+        scan_logs.lock().unwrap().push((get_timestamp(), error_msg));
     }
 
     // 标记扫描已完成
